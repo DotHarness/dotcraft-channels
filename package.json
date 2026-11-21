@@ -1,0 +1,24 @@
+{
+  "name": "dotcraft-channels",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "bundle": "npm run bundle --workspaces --if-present",
+    "test": "npm run test --workspaces",
+    "package": "npm run build && npm run bundle && node scripts/package-plugins.mjs && node scripts/verify-channel-bundles.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "esbuild": "^0.25.11",
+    "typescript": "^5.7.0"
+  },
+  "license": "Apache-2.0"
+}

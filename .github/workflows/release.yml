@@ -1,0 +1,85 @@
+name: Release channels
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Plugin id to submit, such as channel-feishu, or all for a coordinated release.
+        required: true
+        type: string
+        default: all
+      marketplace:
+        description: Submit the selected plugins to the official marketplace.
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      plugins: ${{ steps.select.outputs.plugins }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run package
+      - name: Select plugins
+        id: select
+        env:
+          SELECTED: ${{ inputs.channel }}
+          TAG: ${{ github.ref_name }}
+        run: node scripts/select-release-plugins.mjs >> "$GITHUB_OUTPUT"
+      - name: Package the offline seed archive
+        run: |
+          tar -czf out/channel-seeds.tar.gz -C out/plugins $(ls out/plugins)
+          (cd out && sha256sum channel-seeds.tar.gz > channel-seeds.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: channel-plugins
+          path: out/plugins
+          include-hidden-files: true
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: channel-seeds
+          path: |
+            out/channel-seeds.tar.gz
+            out/channel-seeds.sha256
+          if-no-files-found: error
+
+  publish-seeds:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: channel-seeds
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes channel-seeds.tar.gz channel-seeds.sha256
+
+  marketplace:
+    if: inputs.marketplace
+    needs: [prepare, publish-seeds]
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: ${{ fromJSON(needs.prepare.outputs.plugins) }}
+    uses: DotHarness/dotcraft-plugins/.github/workflows/publish-plugin.yml@main
+    with:
+      artifact: channel-plugins
+      category: Channels
+      plugin-path: ${{ matrix.plugin }}
+    secrets:
+      MARKETPLACE_APP_PRIVATE_KEY: ${{ secrets.MARKETPLACE_APP_PRIVATE_KEY }}
