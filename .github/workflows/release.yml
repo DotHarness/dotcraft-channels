@@ -72,14 +72,58 @@ jobs:
   marketplace:
     if: inputs.marketplace
     needs: [prepare, publish-seeds]
-    strategy:
-      fail-fast: false
-      matrix:
-        plugin: ${{ fromJSON(needs.prepare.outputs.plugins) }}
-    uses: DotHarness/dotcraft-plugins/.github/workflows/publish-plugin.yml@main
-    with:
-      artifact: channel-plugins
-      category: Channels
-      plugin-path: ${{ matrix.plugin }}
-    secrets:
-      MARKETPLACE_APP_PRIVATE_KEY: ${{ secrets.MARKETPLACE_APP_PRIVATE_KEY }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: channel-plugins
+          path: plugins
+      - uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ vars.MARKETPLACE_APP_ID }}
+          private-key: ${{ secrets.MARKETPLACE_APP_PRIVATE_KEY }}
+          owner: DotHarness
+          repositories: dotcraft-plugins
+      - uses: actions/checkout@v6
+        with:
+          repository: DotHarness/dotcraft-plugins
+          token: ${{ steps.app.outputs.token }}
+          path: marketplace
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Stage selected plugins
+        id: stage
+        env:
+          TAG: ${{ github.ref_name }}
+          SELECTED: ${{ inputs.channel }}
+          PLUGINS_JSON: ${{ needs.prepare.outputs.plugins }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          version="${TAG#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$SELECTED" = "all" ]; then
+            echo "target=channels" >> "$GITHUB_OUTPUT"
+            echo "title=Update channel plugins to $version" >> "$GITHUB_OUTPUT"
+          else
+            echo "target=$SELECTED" >> "$GITHUB_OUTPUT"
+            echo "title=Update $SELECTED to $version" >> "$GITHUB_OUTPUT"
+          fi
+          for id in $(node -e 'console.log(JSON.parse(process.env.PLUGINS_JSON).join("\n"))'); do
+            GITHUB_OUTPUT= node marketplace/scripts/stage-plugin.mjs --source "plugins/$id" --category Channels \
+              --version "$version" --repository "$REPOSITORY" --commit "$COMMIT"
+          done
+          node marketplace/scripts/validate-registry.mjs
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          path: marketplace
+          token: ${{ steps.app.outputs.token }}
+          branch: updates/${{ steps.stage.outputs.target }}-${{ steps.stage.outputs.version }}
+          commit-message: ${{ steps.stage.outputs.title }}
+          title: ${{ steps.stage.outputs.title }}
+          body: Plugin files and release provenance from ${{ github.repository }}@${{ github.sha }}. Maintainer review and merge are required.
+          add-paths: |
+            plugins/**
+            .craft/plugins/marketplace.json
