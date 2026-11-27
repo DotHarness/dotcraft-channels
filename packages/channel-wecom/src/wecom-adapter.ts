@@ -3,7 +3,6 @@ import {
   DECISION_CANCEL,
   textPart,
   type InputPart,
-  type ChannelTarget,
 } from "@dotcraft/channel";
 import { saveInboundImage } from "@dotcraft/channel/media";
 import {
@@ -146,33 +145,6 @@ export class WeComAdapter extends ModuleChannelAdapter<WeComConfig> {
 
   protected override getChatDescriptor(_opts: ChannelAdapterMessageOpts, channelContext: string): ChannelChatDescriptor {
     return { kind: this.chatKindByContext.get(channelContext) ?? "group", membership: "shared" };
-  }
-
-  protected override buildChannelTarget(
-    opts: ChannelAdapterMessageOpts,
-    sender: Record<string, unknown>,
-    channelContext: string,
-  ): ChannelTarget | null {
-    const conversationId = parseWeComConversationId(channelContext);
-    if (!conversationId) return null;
-    const platformUserId = String(sender.senderId ?? opts.userId ?? "");
-    const displayName = typeof sender.senderName === "string" && sender.senderName.trim()
-      ? sender.senderName.trim()
-      : null;
-
-    return {
-      channelName: "wecom",
-      conversationKind: "chat",
-      conversationId,
-      deliveryTarget: channelContext,
-      displayName: `WeCom chat ${conversationId}`,
-      boundBy: platformUserId
-        ? {
-          platformUserId,
-          displayName,
-        }
-        : null,
-    };
   }
 
   override async startWithContext(context: WorkspaceContext): Promise<void> {

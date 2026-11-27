@@ -75,7 +75,6 @@ class CommandAdapter extends ChannelAdapter {
     };
     client.streamEvents = () => (async function* () {})();
     client.request = async (method: string) => {
-      if (method === "app/channelBinding/resolve") return { binding: null };
       throw new Error(`unexpected request ${method}`);
     };
   }

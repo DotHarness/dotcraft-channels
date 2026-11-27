@@ -10,9 +10,6 @@ import {
   type Transport,
 } from "@dotcraft/channel/runtime";
 import {
-  type ChannelTarget,
-} from "@dotcraft/channel";
-import {
   ConfigValidationError,
   ModuleChannelAdapter,
   parseApprovalReplyDecision,
@@ -147,35 +144,6 @@ export class TelegramAdapter extends ModuleChannelAdapter<TelegramConfig> {
       url: config.dotcraft.wsUrl,
       token: config.dotcraft.token ?? "",
     });
-  }
-
-  protected override buildChannelTarget(
-    opts: ChannelAdapterMessageOpts,
-    sender: Record<string, unknown>,
-    channelContext: string,
-  ): ChannelTarget | null {
-    const chatId = parseTargetChatId(channelContext);
-    if (chatId === null) return null;
-    const platformUserId = String(sender.senderId ?? opts.userId ?? "");
-    const displayName = typeof sender.senderName === "string" && sender.senderName.trim()
-      ? sender.senderName.trim()
-      : null;
-    const conversationKind = chatId < 0 ? "group" : "user";
-    return {
-      channelName: "telegram",
-      conversationKind,
-      conversationId: String(chatId),
-      deliveryTarget: channelContext || String(chatId),
-      displayName: conversationKind === "group"
-        ? `Telegram chat ${chatId}`
-        : displayName ?? `Telegram user ${chatId}`,
-      boundBy: platformUserId
-        ? {
-          platformUserId,
-          displayName,
-        }
-        : null,
-    };
   }
 
   protected override getDisplayName(): string {
