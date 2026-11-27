@@ -49,14 +49,11 @@ export {
 } from "@dotcraft/sdk";
 export type { InputPart, SenderContext } from "@dotcraft/sdk";
 export type {
-  AppBinding,
-  AppBindingRequestGetResult,
   CommandChoice,
   CommandInfo,
   DynamicToolCallResult,
   DynamicToolContentItem,
   RuntimeAdditionalContextEntry,
-  ChannelTarget,
 } from "@dotcraft/sdk/contracts";
 export {
   ConfigValidationError,

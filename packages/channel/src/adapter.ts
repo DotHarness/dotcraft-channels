@@ -13,7 +13,6 @@ import type {
   ChannelToolDescriptor,
 } from "./capability.js";
 import type {
-  AppBinding,
   CommandChoice,
   CommandInfo,
   InputPart,
@@ -21,7 +20,6 @@ import type {
   SenderContext,
   SessionThread,
   SessionTurn,
-  ChannelTarget,
   ThreadRuntimeState,
 } from "@dotcraft/sdk/contracts";
 import {
@@ -296,13 +294,6 @@ export abstract class ChannelAdapter {
   }
 
   async handleMessage(opts: ChannelAdapterMessageOpts): Promise<void> {
-    const channelContext = opts.channelContext ?? "";
-    const bindCode = this.parseChannelBindCode(opts.text);
-    if (bindCode) {
-      const sender = buildChannelSender(opts, channelContext);
-      if (await this.tryAcceptChannelBinding(opts, sender, channelContext, bindCode)) return;
-    }
-
     if (!opts.skipCommand && await this.commandRouter.isCommand(opts.text)) {
       await this.runCommand(opts);
       return;
@@ -369,84 +360,6 @@ export abstract class ChannelAdapter {
     }
   }
 
-  protected getChannelBindingAppId(): string {
-    return `com.dotharness.channel.${this.channelName}`;
-  }
-
-  protected parseChannelBindCode(text: string): string | null {
-    const match = /^\/bind\s+([1-9][0-9]{5})\s*$/i.exec(text.trim());
-    return match?.[1] ?? null;
-  }
-
-  protected buildChannelTarget(
-    _opts: ChannelAdapterMessageOpts,
-    _sender: Record<string, unknown>,
-    _channelContext: string,
-  ): ChannelTarget | null {
-    return null;
-  }
-
-  protected async onChannelBindingAccepted(
-    binding: AppBinding,
-    target: ChannelTarget,
-    _opts: ChannelAdapterMessageOpts,
-  ): Promise<void> {
-    if (!target.deliveryTarget || !binding.threadId) {
-      throw new Error("Accepted channel binding omitted its delivery target or thread id.");
-    }
-    await this.onDeliver(
-      target.deliveryTarget,
-      `Bound this conversation to thread ${binding.threadId}.`,
-      {
-        appId: binding.appId,
-        bindingId: binding.bindingId,
-        authorityRevision: binding.authorityRevision,
-      },
-    );
-  }
-
-  protected async onChannelBindingFailed(
-    error: unknown,
-    target: ChannelTarget,
-    _opts: ChannelAdapterMessageOpts,
-  ): Promise<void> {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!target.deliveryTarget) throw new Error("Channel binding target omitted its delivery target.");
-    await this.onDeliver(target.deliveryTarget, `Binding failed: ${message}`, {
-      error: message,
-    });
-  }
-
-  private async tryAcceptChannelBinding(
-    opts: ChannelAdapterMessageOpts,
-    sender: Record<string, unknown>,
-    channelContext: string,
-    bindCode: string,
-  ): Promise<boolean> {
-    const target = this.buildChannelTarget(opts, sender, channelContext);
-    if (!target) return false;
-
-    try {
-      await this.client.request(
-        "app/channelBinding/request/get",
-        { code: bindCode },
-      );
-      const binding = await this.client.request(
-        "app/channelBinding/accept",
-        { code: bindCode, target },
-      );
-      if (!binding.threadId) throw new Error("Accepted channel binding omitted its thread id.");
-      const identityKey = this.identityKey(opts.userId, channelContext);
-      this.threadResolver.setCachedThread(identityKey, binding.threadId);
-      this.onThreadContextBound(binding.threadId, channelContext);
-      await this.onChannelBindingAccepted(binding, target, opts);
-    } catch (error) {
-      await this.onChannelBindingFailed(error, target, opts);
-    }
-
-    return true;
-  }
-
   protected enqueueMessage(opts: ChannelAdapterMessageOpts): void {
     const channelContext = opts.channelContext ?? "";
     const identityKey = this.identityKey(opts.userId, channelContext);
@@ -488,21 +401,15 @@ export abstract class ChannelAdapter {
     let release = cachedThreadId ? this.retainObservation(cachedThreadId) : undefined;
 
     try {
-      const { thread, threadId, binding, chat } = await this.resolveConversationThread(opts, sender);
-      if (thread && threadId !== cachedThreadId) {
+      const { thread, threadId, chat } = await this.resolveConversationThread(opts, sender);
+      if (threadId !== cachedThreadId) {
         const previousRelease = release;
         release = this.retainObservation(threadId);
         await previousRelease?.();
       }
       const input = opts.inputParts?.length ? opts.inputParts : [textPart(opts.text)];
 
-      if (binding) {
-        await this.enqueueChannelBoundInput(binding, input, opts, sender);
-        opts.onAccepted?.();
-        return;
-      }
-
-      await this.submitInput(thread!, input, sender, channelContext, async () => {
+      await this.submitInput(thread, input, sender, channelContext, async () => {
         const recovered = await this.recoverThreadAfterNotActive(
           identityKey,
           opts.userId,
@@ -544,31 +451,21 @@ export abstract class ChannelAdapter {
   private async resolveConversationThread(
     opts: ChannelAdapterMessageOpts,
     sender: SenderContext,
-  ): Promise<{ thread: SessionThread | null; threadId: string; binding: AppBinding | null; chat: ChannelChatDescriptor }> {
+  ): Promise<{ thread: SessionThread; threadId: string; chat: ChannelChatDescriptor }> {
     const channelContext = opts.channelContext ?? "";
     const identityKey = this.identityKey(opts.userId, channelContext);
-    const channelTarget = this.buildChannelTarget(opts, sender, channelContext);
-    const binding = channelTarget ? await this.resolveChannelBindingForMessage(channelTarget) : null;
     const chat = this.getChatDescriptor(opts, channelContext);
-    let thread: SessionThread | null = null;
-    let threadId: string;
-    if (binding) {
-      if (!binding.threadId) throw new Error("Resolved channel binding omitted its thread id.");
-      threadId = binding.threadId;
-      this.threadMap.set(identityKey, threadId);
-    } else {
-      thread = await this.getOrCreateThread(
-        identityKey,
-        opts.userId,
-        channelContext,
-        opts.workspacePath ?? this.defaultWorkspacePath,
-        chat,
-      );
-      threadId = thread.id;
-    }
+    const thread = await this.getOrCreateThread(
+      identityKey,
+      opts.userId,
+      channelContext,
+      opts.workspacePath ?? this.defaultWorkspacePath,
+      chat,
+    );
+    const threadId = thread.id;
     if (chat.kind === "direct" || chat.membership === "sender") this.threadSenders.set(threadId, String(sender.senderId));
     this.onThreadContextBound(threadId, channelContext);
-    return { thread, threadId, binding, chat };
+    return { thread, threadId, chat };
   }
 
   private async submitInput(
@@ -676,58 +573,6 @@ export abstract class ChannelAdapter {
     } catch (deliveryError) {
       console.error(`[${this.channelName}] failed to deliver ${failureCode} notice:`, deliveryError);
     }
-  }
-
-  private async enqueueChannelBoundInput(
-    binding: AppBinding,
-    input: InputPart[],
-    opts: ChannelAdapterMessageOpts,
-    sender: SenderContext,
-  ): Promise<void> {
-    await this.client.request("app/threadInput/enqueue", {
-      bindingId: binding.bindingId,
-      input,
-      displayText: opts.text,
-      triggerLabel: `${this.channelName} message`,
-      triggerRefId: this.channelBindingTriggerRef(binding),
-      startPolicy: "runWhenIdle",
-      sender,
-    });
-  }
-
-  private async resolveChannelBindingForMessage(
-    target: ChannelTarget,
-  ): Promise<AppBinding | null> {
-    try {
-      const result = await this.client.request(
-        "app/channelBinding/resolve",
-        {
-          channelName: target.channelName,
-          accountId: target.accountId,
-          conversationKind: target.conversationKind,
-          conversationId: target.conversationId,
-        },
-      );
-      const binding = result.binding ?? null;
-      return binding?.state === "active" ? binding : null;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(
-        `[${this.channelName}] channel binding resolve failed; falling back to normal channel routing: ${message}`,
-      );
-      return null;
-    }
-  }
-
-  private channelBindingTriggerRef(binding: AppBinding): string | undefined {
-    const target = binding.channelTarget;
-    if (!target) return undefined;
-    return [
-      target.channelName,
-      target.accountId ?? "",
-      target.conversationKind,
-      target.conversationId,
-    ].join(":");
   }
 
   protected async getOrCreateThread(

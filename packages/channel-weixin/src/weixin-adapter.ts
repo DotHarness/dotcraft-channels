@@ -9,7 +9,6 @@ import QRCode from "qrcode";
 import {
   DECISION_CANCEL,
   DECISION_DECLINE,
-  type ChannelTarget,
 } from "@dotcraft/channel";
 import {
   ChannelAppServerClient,
@@ -419,32 +418,6 @@ export class WeixinAdapter extends ModuleChannelAdapter<WeixinConfig> {
     _channelContext: string,
   ): ChannelChatDescriptor {
     return { kind: "direct", membership: "shared" };
-  }
-
-  protected override buildChannelTarget(
-    opts: ChannelAdapterMessageOpts,
-    sender: Record<string, unknown>,
-    channelContext: string,
-  ): ChannelTarget | null {
-    const conversationId = channelContext.trim();
-    if (!conversationId) return null;
-    const platformUserId = String(sender.senderId ?? opts.userId ?? "");
-    const displayName = typeof sender.senderName === "string" && sender.senderName.trim()
-      ? sender.senderName.trim()
-      : null;
-    return {
-      channelName: "weixin",
-      conversationKind: "user",
-      conversationId,
-      deliveryTarget: conversationId,
-      displayName: displayName ?? `Weixin user ${conversationId}`,
-      boundBy: platformUserId
-        ? {
-          platformUserId,
-          displayName,
-        }
-        : null,
-    };
   }
 
   protected override async onSend(

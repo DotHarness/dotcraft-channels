@@ -92,7 +92,6 @@ class TurnAdapter extends ChannelAdapter {
     };
     client.threadRead = async () => this.thread;
     client.request = async (method: string) => {
-      if (method === "app/channelBinding/resolve") return { binding: null };
       throw new Error(`unexpected request ${method}`);
     };
   }

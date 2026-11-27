@@ -1,7 +1,6 @@
 import {
   DECISION_DECLINE,
   parseApprovalReplyDecision,
-  type ChannelTarget,
   type CommandChoice,
   type CommandChoiceContext,
 } from "@dotcraft/channel";
@@ -289,34 +288,6 @@ export class FeishuAdapter extends ModuleChannelAdapter<FeishuConfig> {
   async sendCardToConversation(message: ParsedInboundMessage, card: Record<string, unknown>): Promise<FeishuSendResult> {
     this.router.noteInbound(message.channelContext, message.messageId);
     return await this.router.sendCard(message.channelContext, card);
-  }
-
-  protected override buildChannelTarget(
-    opts: ChannelAdapterMessageOpts,
-    sender: Record<string, unknown>,
-    channelContext: string,
-  ): ChannelTarget | null {
-    const target = parseFeishuChannelTarget(conversationTargetBase(channelContext));
-    if (!target) return null;
-    const platformUserId = String(sender.senderId ?? opts.userId ?? "");
-    const displayName = typeof sender.senderName === "string" && sender.senderName.trim()
-      ? sender.senderName.trim()
-      : null;
-    return {
-      channelName: "feishu",
-      conversationKind: target.conversationKind,
-      conversationId: target.conversationId,
-      deliveryTarget: target.deliveryTarget,
-      displayName: target.conversationKind === "group"
-        ? `Feishu group ${target.conversationId}`
-        : displayName ?? `Feishu user ${target.conversationId}`,
-      boundBy: platformUserId
-        ? {
-          platformUserId,
-          displayName,
-        }
-        : null,
-    };
   }
 
   async onDeliver(target: string, content: string, _metadata: Record<string, unknown>): Promise<boolean> {
@@ -890,20 +861,6 @@ export class FeishuAdapter extends ModuleChannelAdapter<FeishuConfig> {
     this.router.forget(channelContext);
     this.history?.reset(channelContext);
   }
-}
-
-function parseFeishuChannelTarget(channelContext: string): {
-  conversationKind: "group" | "user";
-  conversationId: string;
-  deliveryTarget: string;
-} | null {
-  const target = parseConversationTarget(channelContext);
-  if (!target) return null;
-  return {
-    conversationKind: target.kind === "dm" ? "user" : "group",
-    conversationId: target.id,
-    deliveryTarget: formatConversationTarget(target),
-  };
 }
 
 function isUserAuthCommand(text: string): boolean {

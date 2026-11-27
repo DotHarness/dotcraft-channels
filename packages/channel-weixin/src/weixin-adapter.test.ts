@@ -66,7 +66,6 @@ test("Weixin /new reaches the server as a command from an admin sender", async (
   adapter.client.threadList = async () => [];
   adapter.client.threadStart = async () => ({ id: "thread-1", status: "active" });
   adapter.client.request = async (method: string) => {
-    if (method === "app/channelBinding/resolve") return { binding: null };
     throw new Error(`unexpected request ${method}`);
   };
   adapter.client.commandExecute = async (params: Record<string, unknown>) => {
@@ -114,7 +113,6 @@ for (const [kind, question, reply, expected] of [
     adapter.client.threadList = async () => [];
     adapter.client.threadStart = async () => ({ id: "thread-1", status: "active" });
     adapter.client.request = async (method: string) => {
-      if (method === "app/channelBinding/resolve") return { binding: null };
       throw new Error(`unexpected request ${method}`);
     };
     adapter.client.commandExecute = async (params: Record<string, unknown>) => {

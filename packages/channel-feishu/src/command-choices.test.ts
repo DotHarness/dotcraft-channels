@@ -33,7 +33,6 @@ function createAdapter(): { adapter: CommandTestAdapter; executed: Array<Record<
   adapter.client.threadStart = async () => ({ id: "thread-1", status: "active" });
   adapter.client.threadResume = adapter.client.threadStart;
   adapter.client.request = async (method: string) => {
-    if (method === "app/channelBinding/resolve") return { binding: null };
     if (method === "thread/unsubscribe") return {};
     throw new Error(`unexpected request ${method}`);
   };

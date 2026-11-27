@@ -4,7 +4,6 @@ import {
   type ChannelHistoryPage,
   type ChannelHistoryReadRequest,
   type InputPart,
-  type ChannelTarget,
 } from "@dotcraft/channel";
 import { saveInboundImage } from "@dotcraft/channel/media";
 import {
@@ -167,36 +166,6 @@ export class QQAdapter extends ModuleChannelAdapter<QQConfig> {
     }
     const label = opts.userName.trim();
     return label ? { kind: "direct", label, membership: "shared" } : { kind: "direct", membership: "shared" };
-  }
-
-  protected override buildChannelTarget(
-    opts: ChannelAdapterMessageOpts,
-    sender: Record<string, unknown>,
-    channelContext: string,
-  ): ChannelTarget | null {
-    const target = parseQQTarget(channelContext);
-    if (!target) return null;
-    const platformUserId = String(sender.senderId ?? opts.userId ?? "");
-    const displayName = typeof sender.senderName === "string" && sender.senderName.trim()
-      ? sender.senderName.trim()
-      : null;
-    const conversationLabel = target.kind === "group"
-      ? `QQ group ${target.id}`
-      : displayName ?? `QQ user ${target.id}`;
-
-    return {
-      channelName: "qq",
-      conversationKind: target.kind === "group" ? "group" : "user",
-      conversationId: target.id,
-      deliveryTarget: channelContext,
-      displayName: conversationLabel,
-      boundBy: platformUserId
-        ? {
-          platformUserId,
-          displayName,
-        }
-        : null,
-    };
   }
 
   override async startWithContext(context: WorkspaceContext): Promise<void> {
@@ -429,9 +398,8 @@ export class QQAdapter extends ModuleChannelAdapter<QQConfig> {
     };
 
     if (evt.self_id !== undefined) this.selfId = String(evt.self_id);
-    const isBindCode = Boolean(this.parseChannelBindCode(rawText));
     const segments = normalizeMessageSegments(evt.message);
-    if (!isBindCode && isGroup && this.requireMentionInGroups && !this.isAtSelf(evt, segments)) {
+    if (isGroup && this.requireMentionInGroups && !this.isAtSelf(evt, segments)) {
       this.unaddressed.remember(channelContext, {
         ...(evt.message_id !== undefined ? { messageId: String(evt.message_id) } : {}),
         senderName,
@@ -442,20 +410,6 @@ export class QQAdapter extends ModuleChannelAdapter<QQConfig> {
     }
     if (this.approvalReplies.hasPending(approver) && !(await this.isCommand(rawText))) {
       await this.approvalReplies.remindIfPending(approver);
-      return;
-    }
-
-    if (isBindCode) {
-      this.lastSenderByContext.set(channelContext, senderId);
-      await this.handleMessage({
-        userId: threadUserId,
-        userName: senderName,
-        text: rawText,
-        channelContext,
-        sender: senderContext,
-        omitSenderGroupId: !isGroup,
-        directTarget,
-      });
       return;
     }
 
